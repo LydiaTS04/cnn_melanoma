@@ -9,12 +9,11 @@ from huggingface_hub import hf_hub_download
 import os
 
 # --- CONFIGURACIÓN DE PÁGINA ---
-st.set_page_config(page_title="Melanoma2 AI Analyzer", layout="wide", page_icon="🔬")
+st.set_page_config(page_title="IaMelanoma AI Analyzer", layout="wide", page_icon="🔬")
 
 # --- CABECERA CON LOGO UAX ---
 col_logo, col_tit = st.columns([1, 4])
 with col_logo:
-    # Intenta cargar el logo de la UAX
     if os.path.exists("image_13a3db.png"):
         st.image("image_13a3db.png", width=160)
     else:
@@ -52,7 +51,7 @@ class Melanoma2(nn.Module):
         x_att = x * att
         return self.classifier(self.gap(x_att)), att
 
-# --- FILTRO DULLRAZOR (Eliminación de vello) ---
+# --- FILTRO DULLRAZOR ---
 class HairRemovalTransform:
     def __call__(self, img):
         img_cv = np.array(img)
@@ -63,13 +62,11 @@ class HairRemovalTransform:
         dst = cv2.inpaint(img_cv, mask, 1, cv2.INPAINT_TELEA)
         return Image.fromarray(dst)
 
-# --- CARGA DEL MODELO DESDE HUGGING FACE ---
 @st.cache_resource
 def load_clinical_model():
     model = Melanoma2()
     repo_id = "LydiaTS04/cnn_melanoma"
     filename = "mas_datos_modelo_melanoma_2_local.pth"
-    
     try:
         model_path = hf_hub_download(repo_id=repo_id, filename=filename)
         model.load_state_dict(torch.load(model_path, map_location=torch.device('cpu')))
@@ -82,19 +79,30 @@ def load_clinical_model():
 model = load_clinical_model()
 
 # --- INTERFAZ DE USUARIO ---
-st.title("🔬 IaMelanoma: Diagnóstico Clínico ")
-st.markdown("Cargue una imagen de la lesión cutánea para obtener un análisis de probabilidad mediante redes neuronales convolucionales.")
-st.markdown("---")
+st.title("🔬 IaMelanoma: Diagnóstico Clínico")
+st.markdown("Analice una lesión cutánea subiendo un archivo o capturando una foto en tiempo real.")
 
-uploaded_files = st.sidebar.file_uploader("Cargar Imágenes", type=["jpg", "png", "jpeg"], accept_multiple_files=True)
+# --- SIDEBAR: SELECCIÓN DE ENTRADA ---
+st.sidebar.header("📥 Entrada de Muestras")
+input_option = st.sidebar.radio("Seleccione método:", ("Subir Archivo", "Usar Cámara"))
 
-if uploaded_files and model is not None:
-    for uploaded_file in uploaded_files:
-        # Cargar y preprocesar imagen
-        image = Image.open(uploaded_file).convert('RGB')
+muestras = []
+if input_option == "Subir Archivo":
+    files = st.sidebar.file_uploader("Cargar Imágenes", type=["jpg", "png", "jpeg"], accept_multiple_files=True)
+    if files:
+        for f in files:
+            muestras.append({"nombre": f.name, "data": f})
+else:
+    cam_file = st.camera_input("Enfoque la lesión y capture la imagen")
+    if cam_file:
+        muestras.append({"nombre": "Captura_Camara.jpg", "data": cam_file})
+
+# --- PROCESAMIENTO ---
+if muestras and model is not None:
+    for muestra in muestras:
+        image = Image.open(muestra["data"]).convert('RGB')
         img_clean = HairRemovalTransform()(image) 
         
-        # Transformaciones para el modelo
         preprocess = transforms.Compose([
             transforms.Resize((128, 128)),
             transforms.ToTensor(),
@@ -102,29 +110,26 @@ if uploaded_files and model is not None:
         ])
         input_tensor = preprocess(img_clean).unsqueeze(0)
         
-        # Inferencia
         with torch.no_grad():
             output, att_map = model(input_tensor)
             prob = torch.sigmoid(output).item()
             
-            # --- UMBRAL AJUSTADO A 0.60 ---
             UMBRAL_CORTE = 0.60
             label = "⚠️ MALIGNO" if prob >= UMBRAL_CORTE else "✅ BENIGNO"
             color = "red" if prob >= UMBRAL_CORTE else "green"
 
-        # Generación de Mapa de Calor (Atención)
+        # Mapa de Calor
         att_np = att_map.squeeze().cpu().numpy()
-        att_rescaled = cv2.resize(att_np, (image.size[0], image.size[1]))
-        att_rescaled = (att_rescaled - att_rescaled.min()) / (att_rescaled.max() - att_rescaled.min() + 1e-8)
-        heatmap = cv2.applyColorMap(np.uint8(255 * att_rescaled), cv2.COLORMAP_JET)
+        att_res = cv2.resize(att_np, (image.size[0], image.size[1]))
+        att_res = (att_res - att_res.min()) / (att_res.max() - att_res.min() + 1e-8)
+        heatmap = cv2.applyColorMap(np.uint8(255 * att_res), cv2.COLORMAP_JET)
         heatmap = cv2.cvtColor(heatmap, cv2.COLOR_BGR2RGB)
         overlay = cv2.addWeighted(np.array(image), 0.6, heatmap, 0.4, 0)
 
-        # UI de Resultados
-        with st.expander(f"ANÁLISIS: {uploaded_file.name}", expanded=True):
+        with st.expander(f"ANÁLISIS: {muestra['nombre']}", expanded=True):
             c1, c2, c3 = st.columns(3)
             with c1:
-                st.image(image, caption="Imagen Original", use_container_width=True)
+                st.image(image, caption="Muestra Original", use_container_width=True)
             with c2:
                 st.image(overlay, caption="Zonas de Atención IA", use_container_width=True)
             with c3:
@@ -135,9 +140,9 @@ if uploaded_files and model is not None:
                 
                 st.markdown("### 🩺 Interpretación Médica")
                 if prob >= UMBRAL_CORTE:
-                    st.error("**HALLAZGOS:** Se detecta asimetría estructural y patrones de activación sospechosos. Se recomienda derivación urgente a dermatoscopia.")
+                    st.error("**HALLAZGOS:** Patrones de activación sospechosos. Se recomienda derivación urgente.")
                 else:
-                    st.success("**HALLAZGOS:** Lesión con arquitectura uniforme y baja activación. Se sugiere vigilancia preventiva y uso de protección solar.")
+                    st.success("**HALLAZGOS:** Lesión con arquitectura uniforme. Se sugiere vigilancia preventiva.")
 
 st.markdown("---")
-st.caption("Arquitectura: 9 capas Conv, Módulo de Atención y optimización AdamW. **Recuerde: Ante cualquier duda, consulte a su médico.**")
+st.caption("Arquitectura: 9 capas Conv, Módulo de Atención y optimización AdamW. **Recuerde: Consulte a su médico.**")
