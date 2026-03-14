@@ -11,6 +11,15 @@ import os
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="Melanoma2 AI Analyzer", layout="wide", page_icon="🔬")
 
+# --- CABECERA CON LOGO UAX ---
+col_logo, col_tit = st.columns([1, 4])
+with col_logo:
+    # Intenta cargar el logo de la UAX
+    if os.path.exists("image_13a3db.png"):
+        st.image("image_13a3db.png", width=160)
+    else:
+        st.markdown("### 🏥 UAX Salud Digital")
+
 # --- AVISO MÉDICO OBLIGATORIO ---
 st.error("⚠️ **ADVERTENCIA MÉDICA:** Esta es una herramienta de Inteligencia Artificial experimental. Los resultados son aproximaciones estadísticas y **NO constituyen un diagnóstico médico**. No tome decisiones de salud basadas en esta web. **Debe acudir a un dermatólogo colegiado** para un examen profesional.")
 
@@ -62,7 +71,6 @@ def load_clinical_model():
     filename = "mas_datos_modelo_melanoma_2_local.pth"
     
     try:
-        # Descarga el archivo desde Hugging Face usando la librería oficial
         model_path = hf_hub_download(repo_id=repo_id, filename=filename)
         model.load_state_dict(torch.load(model_path, map_location=torch.device('cpu')))
         model.eval()
@@ -74,7 +82,7 @@ def load_clinical_model():
 model = load_clinical_model()
 
 # --- INTERFAZ DE USUARIO ---
-st.title("🔬 Melanoma2: Diagnóstico Clínico Avanzado")
+st.title("🔬 IaMelanoma: Diagnóstico Clínico ")
 st.markdown("Cargue una imagen de la lesión cutánea para obtener un análisis de probabilidad mediante redes neuronales convolucionales.")
 st.markdown("---")
 
@@ -98,8 +106,11 @@ if uploaded_files and model is not None:
         with torch.no_grad():
             output, att_map = model(input_tensor)
             prob = torch.sigmoid(output).item()
-            label = "⚠️ MALIGNO" if prob > 0.5 else "✅ BENIGNO"
-            color = "red" if prob > 0.5 else "green"
+            
+            # --- UMBRAL AJUSTADO A 0.60 ---
+            UMBRAL_CORTE = 0.60
+            label = "⚠️ MALIGNO" if prob >= UMBRAL_CORTE else "✅ BENIGNO"
+            color = "red" if prob >= UMBRAL_CORTE else "green"
 
         # Generación de Mapa de Calor (Atención)
         att_np = att_map.squeeze().cpu().numpy()
@@ -119,10 +130,11 @@ if uploaded_files and model is not None:
             with c3:
                 st.subheader(f"Resultado: :{color}[{label}]")
                 st.write(f"**Confianza:** {prob*100:.2f}%")
+                st.write(f"*(Umbral clínico: {UMBRAL_CORTE*100:.0f}%)*")
                 st.progress(prob)
                 
                 st.markdown("### 🩺 Interpretación Médica")
-                if prob > 0.5:
+                if prob >= UMBRAL_CORTE:
                     st.error("**HALLAZGOS:** Se detecta asimetría estructural y patrones de activación sospechosos. Se recomienda derivación urgente a dermatoscopia.")
                 else:
                     st.success("**HALLAZGOS:** Lesión con arquitectura uniforme y baja activación. Se sugiere vigilancia preventiva y uso de protección solar.")
