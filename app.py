@@ -20,7 +20,7 @@ with col_logo:
         st.markdown("### 🏥 UAX Salud Digital")
 
 # --- AVISO MÉDICO OBLIGATORIO ---
-st.error("⚠️ **ADVERTENCIA MÉDICA:** Esta es una herramienta de Inteligencia Artificial experimental. Los resultados son aproximaciones estadísticas y **NO constituyen un diagnóstico médico**. No tome decisiones de salud basadas en esta web. **Debe acudir a un dermatólogo colegiado** para un examen profesional.")
+st.error("⚠️ **ADVERTENCIA MÉDICA:** Esta es una herramienta de Inteligencia Artificial experimental. Los resultados NO constituyen un diagnóstico médico. Debe acudir a un dermatólogo colegiado.")
 
 # --- ARQUITECTURA DEL MODELO ---
 class Melanoma2(nn.Module):
@@ -80,34 +80,34 @@ model = load_clinical_model()
 
 # --- INTERFAZ DE USUARIO ---
 st.title("🔬 IaMelanoma: Diagnóstico Clínico")
-st.markdown("Analice una lesión cutánea subiendo un archivo o capturando una foto en tiempo real.")
+st.markdown("Captura o sube una imagen. El sistema la redimensionará automáticamente para el análisis.")
 
-# --- SIDEBAR: SELECCIÓN DE ENTRADA ---
-st.sidebar.header("📥 Entrada de Muestras")
-input_option = st.sidebar.radio("Seleccione método:", ("Subir Archivo", "Usar Cámara"))
+# --- SIDEBAR ---
+st.sidebar.header("📥 Entrada")
+input_option = st.sidebar.radio("Método:", ("Subir Archivo", "Usar Cámara"))
 
 muestras = []
 if input_option == "Subir Archivo":
     files = st.sidebar.file_uploader("Cargar Imágenes", type=["jpg", "png", "jpeg"], accept_multiple_files=True)
     if files:
-        for f in files:
-            muestras.append({"nombre": f.name, "data": f})
+        for f in files: muestras.append({"nombre": f.name, "data": f})
 else:
-    cam_file = st.camera_input("Enfoque la lesión y capture la imagen")
-    if cam_file:
-        muestras.append({"nombre": "Captura_Camara.jpg", "data": cam_file})
+    cam_file = st.camera_input("Capture la lesión")
+    if cam_file: muestras.append({"nombre": "Captura_Camara.jpg", "data": cam_file})
 
-# --- PROCESAMIENTO ---
+# --- PROCESAMIENTO CON REDIMENSIÓN ---
 if muestras and model is not None:
     for muestra in muestras:
         image = Image.open(muestra["data"]).convert('RGB')
-        img_clean = HairRemovalTransform()(image) 
         
+        # 1. REDIMENSIÓN PARA LA IA (128x128 fijo)
         preprocess = transforms.Compose([
-            transforms.Resize((128, 128)),
+            transforms.Resize((128, 128)), 
             transforms.ToTensor(),
             transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
         ])
+        
+        img_clean = HairRemovalTransform()(image)
         input_tensor = preprocess(img_clean).unsqueeze(0)
         
         with torch.no_grad():
@@ -118,8 +118,9 @@ if muestras and model is not None:
             label = "⚠️ MALIGNO" if prob >= UMBRAL_CORTE else "✅ BENIGNO"
             color = "red" if prob >= UMBRAL_CORTE else "green"
 
-        # Mapa de Calor
+        # 2. REDIMENSIÓN DEL MAPA DE CALOR (Para visualización médica)
         att_np = att_map.squeeze().cpu().numpy()
+        # Se redimensiona el mapa de atención al tamaño original de la foto subida
         att_res = cv2.resize(att_np, (image.size[0], image.size[1]))
         att_res = (att_res - att_res.min()) / (att_res.max() - att_res.min() + 1e-8)
         heatmap = cv2.applyColorMap(np.uint8(255 * att_res), cv2.COLORMAP_JET)
@@ -131,18 +132,17 @@ if muestras and model is not None:
             with c1:
                 st.image(image, caption="Muestra Original", use_container_width=True)
             with c2:
-                st.image(overlay, caption="Zonas de Atención IA", use_container_width=True)
+                st.image(overlay, caption="Mapa de Atención Redimensionado", use_container_width=True)
             with c3:
                 st.subheader(f"Resultado: :{color}[{label}]")
                 st.write(f"**Confianza:** {prob*100:.2f}%")
-                st.write(f"*(Umbral clínico: {UMBRAL_CORTE*100:.0f}%)*")
+                st.write(f"*(Umbral: {UMBRAL_CORTE*100:.0f}%)*")
                 st.progress(prob)
                 
-                st.markdown("### 🩺 Interpretación Médica")
                 if prob >= UMBRAL_CORTE:
-                    st.error("**HALLAZGOS:** Patrones de activación sospechosos. Se recomienda derivación urgente.")
+                    st.error("**ALERTA:** Patrones sospechosos detectados por el backbone de 9 capas.")
                 else:
-                    st.success("**HALLAZGOS:** Lesión con arquitectura uniforme. Se sugiere vigilancia preventiva.")
+                    st.success("**NORMAL:** Arquitectura uniforme preservada.")
 
 st.markdown("---")
-st.caption("Arquitectura: 9 capas Conv, Módulo de Atención y optimización AdamW. **Recuerde: Consulte a su médico.**")
+st.caption("Arquitectura: Melanoma2 (UAX). Redimensionamiento dinámico activo.")
