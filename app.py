@@ -143,9 +143,9 @@ if muestras and model is not None:
                 
                 st.markdown("### 🩺 Interpretación Médica")
                 if prob >= UMBRAL_CORTE:
-                    st.error("**HALLAZGOS:** Patrones de activación sospechosos. Se recomienda derivación urgente.")
+                    st.error("**HALLAZGOS:**Se detecta asimetría estructural y patrones de activación sospechosos. Se recomienda derivación urgente a dermatoscopia.")
                 else:
-                    st.success("**HALLAZGOS:** Lesión con arquitectura uniforme. Se sugiere vigilancia preventiva.")
+                    st.success("**HALLAZGOS:** Lesión con arquitectura uniforme y baja activación. Se sugiere vigilancia preventiva y uso de protección solar.")
 
 st.markdown("---")
 st.caption("Arquitectura: 9 capas Conv, Módulo de Atención y optimización AdamW. **Recuerde: Consulte a su médico.**")
